@@ -87,6 +87,32 @@ Sync `generation=1`, then `generation=2`, and check the database is right. Then 
   layer aren't. We're looking at how you test, not just that you did, so write
   your own; the repo doesn't hand you a test plan.
 
+## Background synchronization
+
+Enqueue a sync using the existing Redis and Sidekiq services:
+
+```bash
+docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 1)'
+```
+
+Use `generation: 2` to import the changed mock dataset. Each execution attempt
+creates its own SyncRun, including failed attempts. Connection failures, timeouts,
+HTTP 408/429 and 5xx responses get at most three attempts total, 30 seconds apart.
+Malformed data, invalid JSON and other HTTP errors are not retried automatically.
+Active Job manages retries; Sidekiq's additional retry cycle is disabled for this job.
+
+For a nightly sync at 02:00 in the host's timezone, install this entry in the
+Docker user's crontab, replacing the project and Docker executable paths:
+
+```cron
+0 2 * * * cd /absolute/path/to/festival-programme-sync && /usr/bin/docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 1)' >> /tmp/festival-programme-sync-cron.log 2>&1
+```
+
+The host must be running, the cron user must have Docker access, and the web,
+Redis and Sidekiq services must be up. Cron only enqueues; Sidekiq performs the
+import on the default queue. Inspect SyncRun records for outcomes and worker logs
+for errors. No scheduler gem or cron installation inside containers is needed.
+
 ## Submitting
 
 A private git repo with your commits. Please don't squash.

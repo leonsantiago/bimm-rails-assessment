@@ -56,13 +56,13 @@ RSpec.describe ProgrammeSync, "run tracking" do
   end
 
   it "preserves tracking and eight committed records when page two fails" do
-    expect { run_sync(fail_after: 8) }.to raise_error(FestivalApiClient::Error, /HTTP 500/)
+    expect { run_sync(fail_after: 8) }.to raise_error(FestivalApiClient::TransientError, /HTTP 500/)
 
     run = SyncRun.sole
     expect(run).to have_attributes(
       status: "failed", screenings_created: 8, screenings_updated: 0,
       screenings_unchanged: 0, last_processed_page: 1,
-      error_class: "FestivalApiClient::Error"
+      error_class: "FestivalApiClient::TransientError"
     )
     expect(run.error_message).to match(/HTTP 500.*page 2/)
     expect(run.finished_at).to be >= run.started_at

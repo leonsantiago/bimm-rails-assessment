@@ -2,6 +2,7 @@ require "json"
 
 class FestivalApiClient
   class Error < StandardError; end
+  class TransientError < Error; end
 
   def initialize(base_url: ENV.fetch("FESTIVAL_API_URL", "http://localhost:3000"), connection: nil)
     @connection = connection || Faraday.new(url: base_url) do |http|
@@ -12,13 +13,18 @@ class FestivalApiClient
 
   def screenings(page:, generation: 1, **params)
     response = @connection.get("/mock_api/screenings", params.merge(page: page, generation: generation))
-    raise Error, "Festival API returned HTTP #{response.status} on page #{page}" unless response.success?
+    unless response.success?
+      error_class = [ 408, 429 ].include?(response.status) || (500..599).cover?(response.status) ? TransientError : Error
+      raise error_class, "Festival API returned HTTP #{response.status} on page #{page}"
+    end
 
     payload = JSON.parse(response.body)
     validate_page!(payload, page)
     payload
   rescue JSON::ParserError
     raise Error, "Festival API returned invalid JSON on page #{page}"
+  rescue Faraday::ConnectionFailed, Faraday::TimeoutError => error
+    raise TransientError, "Festival API request failed on page #{page}: #{error.message}"
   rescue Faraday::Error => error
     raise Error, "Festival API request failed on page #{page}: #{error.message}"
   end

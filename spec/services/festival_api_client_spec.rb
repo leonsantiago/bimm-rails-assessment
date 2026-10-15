@@ -10,7 +10,7 @@ RSpec.describe FestivalApiClient do
 
   it "reports HTTP errors" do
     expect { api_client.screenings(page: 2, fail_after: 8) }
-      .to raise_error(described_class::Error, /HTTP 500.*page 2/)
+      .to raise_error(described_class::TransientError, /HTTP 500.*page 2/)
   end
 
   [ Faraday::ConnectionFailed, Faraday::TimeoutError ].each do |error_class|
@@ -18,7 +18,25 @@ RSpec.describe FestivalApiClient do
       client = api_client { raise error_class, "unavailable" }
 
       expect { client.screenings(page: 1) }
-        .to raise_error(described_class::Error, /request failed.*page 1/)
+        .to raise_error(described_class::TransientError, /request failed.*page 1/)
+    end
+  end
+
+  [ 408, 429, 502, 503, 504 ].each do |status|
+    it "classifies HTTP #{status} as transient" do
+      client = api_client { [ status, {}, "unavailable" ] }
+
+      expect { client.screenings(page: 1) }.to raise_error(described_class::TransientError)
+    end
+  end
+
+  [ 400, 401, 403, 404, 422 ].each do |status|
+    it "does not classify HTTP #{status} as transient" do
+      client = api_client { [ status, {}, "invalid request" ] }
+
+      expect { client.screenings(page: 1) }.to raise_error do |error|
+        expect(error).to be_instance_of(described_class::Error)
+      end
     end
   end
 
