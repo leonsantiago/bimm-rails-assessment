@@ -89,6 +89,9 @@ Sync `generation=1`, then `generation=2`, and check the database is right. Then 
 
 ## Background synchronization
 
+Screenings absent from an upstream response are intentionally retained. The API
+has no explicit deletion contract; removal awaits an agreed deletion policy.
+
 Enqueue a sync using the existing Redis and Sidekiq services:
 
 ```bash
