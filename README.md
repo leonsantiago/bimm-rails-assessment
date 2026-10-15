@@ -1,128 +1,104 @@
-# Festival Programme Sync — Take-Home
+# Festival Programme Sync
 
-**Role:** Senior Rails / Hotwire Developer · **Time box:** 4 hours
-**Stack:** Rails 8, Hotwire, PostgreSQL, Sidekiq, Tailwind (all in Docker)
+Senior Rails / Hotwire Developer — Technical Assessment
 
-## Context
+**Stack:** Rails 8 · Hotwire · PostgreSQL · Sidekiq · Redis · Tailwind CSS · Docker
 
-You're joining a team that maintains a film festival's public website. It's a
-Rails monolith that also acts as the editorial CMS, and it pulls programming data
-from an external festival-management system over an API.
+## Overview
 
-That external system is the source of truth for films, venues and screenings. Our
-database holds a local copy so the site renders fast and stays up under load.
-Today that copy is refreshed by a nightly script a colleague wrote in a hurry, and
-it's been causing problems.
+A Rails application that maintains a local copy of a film festival's programme, synchronized from an external festival-management API.
 
-**Your job is to replace it.**
+The implementation focuses on reliable synchronization, graceful handling of partial failures, background processing, and a responsive server-rendered screenings interface.
 
-## What we've given you
+## Getting Started
 
-A working Rails 8 app with `Film`, `Venue` and `Screening` models, a mock external
-API at `/mock_api` that behaves like the real one including its failure modes, an
-existing `VenueSync` service and its tests, a screenings index with a filter form,
-and seed data.
-
-### Running it
-
-Everything runs in Docker. One step:
+Start the application and its dependencies:
 
 ```bash
 docker compose up --build
 ```
 
-That starts Postgres, Redis, the Rails web server, a Tailwind watcher and Sidekiq,
-and creates/migrates/seeds the database on first boot.
+This starts Rails, PostgreSQL, Redis, Sidekiq, and Tailwind. The database is prepared and seeded on first boot.
 
-- App: <http://localhost:3000>
-- Sidekiq dashboard: <http://localhost:3000/sidekiq>
-- Postgres is exposed on host port **5544** (non-standard, so it won't collide)
+- **Application:** http://localhost:3000/screenings
+- **Sidekiq dashboard:** http://localhost:3000/sidekiq
+- **PostgreSQL:** localhost:5544
 
-Handy commands (see the `Makefile`):
+Useful commands:
 
 ```bash
-make console   # rails console inside the web container
-make test      # run the RSpec suite
-make sh        # a shell in the web container
+make test       # Run the RSpec suite
+make console    # Open Rails console
+make sh         # Open a shell inside the web container
 ```
 
-## What we'd like you to build
+## Running Synchronization
 
-1. **A programme sync.** Pull screenings from `GET /mock_api/screenings` into our
-   database. It's paginated, returns nested film and venue data, and behaves like a
-   real third-party API: sometimes slow, sometimes failing partway through, and its
-   records change between runs.
-
-   Running it twice must not create duplicates. Running it after upstream data
-   changes must update the local copy. If the API fails partway, records already
-   retrieved shouldn't be lost. It should run on a schedule as a background job, and
-   we should be able to tell afterwards whether a run succeeded and what it did.
-
-2. **A filtered screenings list.** The index at `/screenings` has a filter form that
-   reloads the whole page. Make it update just the results. Filters are date, venue,
-   and a text search across titles. Keep it server-rendered; we're a Hotwire shop and
-   aren't looking for a client-side rendering layer.
-
-3. **A short README.** Half a page. What you'd do differently with more time, anything
-   in the existing code you'd change and why, and any assumptions you made.
-
-## Testing the mock API
-
-| Parameter      | Effect                                                                                                     |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| `?page=2`      | Pagination, 25 records per page                                                                            |
-| `?generation=2`| The dataset after upstream changes. Screenings have moved venue, some are cancelled, a film has been retitled, two screenings are new. |
-| `?fail_after=8`| Returns 8 records, then a 500                                                                              |
-| `?slow=true`   | Six-second delay                                                                                           |
-
-Sync `generation=1`, then `generation=2`, and check the database is right. Then try
-`generation=1&fail_after=8` and check nothing was lost.
-
-## What we care about
-
-- **Correctness under failure, ahead of feature completeness.** If you run short, a
-  sync that handles the edge cases and a filter that doesn't quite work beats the
-  reverse.
-- Tests are expected — at least for the sync and the models. Tests for the view
-  layer aren't. We're looking at how you test, not just that you did, so write
-  your own; the repo doesn't hand you a test plan.
-
-## Background synchronization
-
-Screenings absent from an upstream response are intentionally retained. The API
-has no explicit deletion contract; removal awaits an agreed deletion policy.
-
-Enqueue a sync using the existing Redis and Sidekiq services:
+Enqueue a synchronization using Sidekiq:
 
 ```bash
 docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 1)'
 ```
 
-Use `generation: 2` to import the changed mock dataset. Each execution attempt
-creates its own SyncRun, including failed attempts. Connection failures, timeouts,
-HTTP 408/429 and 5xx responses get at most three attempts total, 30 seconds apart.
-Malformed data, invalid JSON and other HTTP errors are not retried automatically.
-Active Job manages retries; Sidekiq's additional retry cycle is disabled for this job.
+Test upstream changes using the second dataset:
 
-Only one synchronization runs at a time per database, across all generations and
-worker processes. A non-blocking PostgreSQL session advisory lock is held on the
-same checked-out connection through API requests, imports and SyncRun finalization.
-No transaction is held open across HTTP requests. The lock is released on success
-or failure (and by PostgreSQL if the session disconnects). Overlapping calls log a
-skip and return `nil`, without making API requests, creating a SyncRun or retrying.
-
-For a nightly sync at 02:00 in the host's timezone, install this entry in the
-Docker user's crontab, replacing the project and Docker executable paths:
-
-```cron
-0 2 * * * cd /absolute/path/to/festival-programme-sync && /usr/bin/docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 1)' >> /tmp/festival-programme-sync-cron.log 2>&1
+```bash
+docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 2)'
 ```
 
-The host must be running, the cron user must have Docker access, and the web,
-Redis and Sidekiq services must be up. Cron only enqueues; Sidekiq performs the
-import on the default queue. Inspect SyncRun records for outcomes and worker logs
-for errors. No scheduler gem or cron installation inside containers is needed.
+The mock API supports additional scenarios:
 
-## Submitting
+| Parameter | Behavior |
+|---|---|
+| `generation=1` | Original dataset (60 screenings) |
+| `generation=2` | Updated films, venues, screenings, and cancellations |
+| `fail_after=8` | Simulates a partial response followed by HTTP 500 |
+| `slow=true` | Simulates a slow API response |
 
-A private git repo with your commits. Please don't squash.
+Each execution attempt creates a `SyncRun` record containing its status, timestamps, processed pages, counters, and error details.
+
+Scheduling is delegated to an external scheduler. For example, a host cron entry can enqueue the job nightly at 02:00:
+
+```cron
+0 2 * * * cd /absolute/path/to/festival-programme-sync && /usr/bin/docker compose exec -T web bin/rails runner 'ProgrammeSyncJob.perform_later(generation: 1)'
+```
+
+The host must have Docker access, and the application containers must be running. Cron enqueues the job; Sidekiq performs the synchronization.
+
+## Implementation Notes
+
+### Technical Decisions
+
+- **Idempotent imports:** Films, venues, and screenings are matched by stable external IDs. Existing records are updated rather than duplicated.
+- **Partial failure handling:** Each screening is imported within its own database transaction. Successfully committed records remain available if a later API request fails.
+- **Background processing:** Active Job and Sidekiq handle asynchronous execution. Transient failures are retried up to three attempts, 30 seconds apart; deterministic errors are not automatically retried.
+- **Observability:** `SyncRun` records execution outcomes, created/updated/unchanged counts, completed pages, and failures.
+- **Concurrency:** A PostgreSQL session-level advisory lock prevents overlapping synchronizations across worker processes. The lock is held for the entire sync without keeping a database transaction open during HTTP requests. Overlapping executions are skipped.
+- **Hotwire UI:** Turbo Frames update only the screenings results. Date, venue, and case-insensitive title filters can be combined, while eager loading prevents N+1 queries.
+
+### Assumptions and Trade-offs
+
+- The upstream API is the source of truth for record attributes, but it does not explicitly define deletion semantics. Screenings missing from a response are intentionally retained rather than automatically deleted.
+- Partial imports are acceptable because subsequent executions are idempotent.
+- Periodic scheduling uses external cron rather than an additional scheduling dependency. Skipped overlapping jobs are not automatically rescheduled.
+
+### With More Time
+
+- Add monitoring and alerting for failed or skipped synchronizations.
+- Define an explicit removal or archival policy for screenings absent from upstream data.
+- Consider batch imports and more scalable progress tracking for larger datasets.
+- Refactor the existing `VenueSync` service to match venues by external ID rather than name, preventing incorrect behavior when venues are renamed.
+
+## Tests
+
+Run the complete RSpec suite:
+
+```bash
+make test
+```
+
+Tests cover API failures and pagination, idempotency, partial imports, changes between generations, execution tracking, retries, concurrency protection, filtering, Turbo Frame responses, and N+1 prevention.
+
+## Submission
+
+Private Git repository with incremental commits preserved.
