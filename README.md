@@ -101,6 +101,13 @@ HTTP 408/429 and 5xx responses get at most three attempts total, 30 seconds apar
 Malformed data, invalid JSON and other HTTP errors are not retried automatically.
 Active Job manages retries; Sidekiq's additional retry cycle is disabled for this job.
 
+Only one synchronization runs at a time per database, across all generations and
+worker processes. A non-blocking PostgreSQL session advisory lock is held on the
+same checked-out connection through API requests, imports and SyncRun finalization.
+No transaction is held open across HTTP requests. The lock is released on success
+or failure (and by PostgreSQL if the session disconnects). Overlapping calls log a
+skip and return `nil`, without making API requests, creating a SyncRun or retrying.
+
 For a nightly sync at 02:00 in the host's timezone, install this entry in the
 Docker user's crontab, replacing the project and Docker executable paths:
 

@@ -1,6 +1,8 @@
 class ProgrammeSync
   class InvalidRecord < StandardError; end
 
+  ADVISORY_LOCK_KEY = 0x42494D4D
+
   def initialize(client: FestivalApiClient.new, generation: 1, **params)
     @client = client
     @generation = generation
@@ -8,6 +10,27 @@ class ProgrammeSync
   end
 
   def call
+    # Session locks must be acquired and released on the same checked-out connection.
+    ApplicationRecord.connection_pool.with_connection do |connection|
+      acquired = ApplicationRecord.uncached do
+        connection.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
+      end
+      unless acquired
+        Rails.logger.info("ProgrammeSync skipped: another synchronization is running")
+        return nil
+      end
+
+      begin
+        synchronize
+      ensure
+        connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
+      end
+    end
+  end
+
+  private
+
+  def synchronize
     run = SyncRun.create!(started_at: Time.current)
     counts = { screenings_created: 0, screenings_updated: 0, screenings_unchanged: 0 }
     page = 1
@@ -39,8 +62,6 @@ class ProgrammeSync
 
     run
   end
-
-  private
 
   def import_screening(record)
     validate_record!(record)
