@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_120003) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -37,6 +37,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_120003) do
     t.index ["film_id"], name: "index_screenings_on_film_id"
     t.index ["starts_at"], name: "index_screenings_on_starts_at"
     t.index ["venue_id"], name: "index_screenings_on_venue_id"
+  end
+
+  create_table "sync_runs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "error_class"
+    t.text "error_message"
+    t.datetime "finished_at"
+    t.integer "last_processed_page", default: 0, null: false
+    t.integer "screenings_created", default: 0, null: false
+    t.integer "screenings_unchanged", default: 0, null: false
+    t.integer "screenings_updated", default: 0, null: false
+    t.datetime "started_at", null: false
+    t.string "status", default: "running", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "venues", force: :cascade do |t|
