@@ -70,7 +70,7 @@ module MockApi
       film_id  = format("FILM-%03d", ((n - 1) % 12) + 1)
       venue_id = format("VEN-%02d",  ((n - 1) % 6) + 1)
       day      = 5 + (n % 12)                       # spread across ~12 festival days
-      hour     = [14, 16, 18, 20][n % 4]
+      hour     = [ 14, 16, 18, 20 ][n % 4]
       {
         "id"        => format("SCR-%04d", n),
         "film_id"   => film_id,

@@ -33,20 +33,30 @@ class ProgrammeSync
   def synchronize
     run = SyncRun.create!(started_at: Time.current)
     counts = { screenings_created: 0, screenings_updated: 0, screenings_unchanged: 0 }
+    external_ids = []
+    pagination = nil
     page = 1
 
     begin
       loop do
         payload = @client.screenings(page: page, generation: @generation, **@params)
+        metadata = payload.values_at("total_count", "total_pages", "per_page")
+        pagination ||= metadata
+        raise FestivalApiClient::Error, "Festival API pagination changed during synchronization" unless metadata == pagination
+
         payload.fetch("screenings").each do |record|
           outcome = import_screening(record)
           counts[outcome] += 1
+          external_ids << record.fetch("id")
         end
         # Only advance the checkpoint after the entire page has completed.
         run.update!(counts.merge(last_processed_page: page))
         break if page >= payload.fetch("total_pages")
 
         page += 1
+      end
+      unless external_ids.size == pagination.first && external_ids.uniq.size == external_ids.size
+        raise FestivalApiClient::Error, "Festival API response is incomplete or contains duplicate screening IDs"
       end
       run.update!(status: :succeeded, finished_at: Time.current)
     rescue StandardError => error

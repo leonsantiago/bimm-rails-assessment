@@ -42,7 +42,7 @@ class FestivalApiClient
     if valid
       expected_pages = (payload["total_count"].to_f / payload["per_page"]).ceil
       valid = payload["total_pages"] == expected_pages &&
-        page <= [expected_pages, 1].max &&
+        page <= [ expected_pages, 1 ].max &&
         payload["screenings"].size <= payload["per_page"]
     end
 

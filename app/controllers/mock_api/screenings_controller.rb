@@ -13,7 +13,7 @@ module MockApi
       sleep 6 if truthy?(params[:slow])
 
       all    = Dataset.records(generation: params.fetch(:generation, 1))
-      page   = [params.fetch(:page, 1).to_i, 1].max
+      page   = [ params.fetch(:page, 1).to_i, 1 ].max
       offset = (page - 1) * Dataset::PER_PAGE
 
       fail_after = params[:fail_after].presence&.to_i
@@ -28,7 +28,7 @@ module MockApi
 
       # Truncate the final successful page so exactly `fail_after` records escape.
       if fail_after
-        allowed = [fail_after - offset, 0].max
+        allowed = [ fail_after - offset, 0 ].max
         slice   = slice.first(allowed)
       end
 
